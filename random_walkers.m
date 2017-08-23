@@ -1,10 +1,11 @@
 %% TO DO
 
 % x. track the total number of "stuck" vs number of "swimmers"
-% 1. make some stuck forever?
+% 2. make some stuck forever?
 % x. histogram the number of times a cell is stuck
 % x. incorporate "energy taxis" where cells tumble more where there is a
 % high pmf (tumbling rate is higher where glucose-g is high)
+% 5. incorporate a history effect on top the 
 % x. calculate steadistate of stuck vs unstuck
 % x. velocity decrease when in region of low food (doesn't make sense
 % though, more of a gradual long-term change as the pmf is depleted)
@@ -37,7 +38,7 @@ for k = 1:iter
     
 %% Number of cells and initial condition
 
-n = 1; % can go up to 10e5 cells without much problem
+n = 1000; % can go up to 10e5 cells without much problem
 
 % choose 1
 % N0 = rand(n,2)*10+x/2; % center inoculation
@@ -95,7 +96,7 @@ G = ones(n,1);
 Cx_h4 = x/(cbins*2):x/cbins:x-x/(cbins*2);
 Cy_h4 = y/(cbins*2):y/cbins:y-y/(cbins*2);
 
-cons = 0.005; % 0.00005
+cons = 0.00005; % 0.00005
 
 %% Simulation
 
@@ -192,20 +193,20 @@ for t=0:tstep:tmax
     if Ny(i) < 0
         Ny(i) = -Ny(i);
         if A(i,2) >= 270
-        A(i,:) = A(i,:) - 2*(A(i,:)-270);
+        A(i,:) = A(i,:) - 2*(A(i,:)-270) - 180;
         end
         if A(i,2) < 270 && A(i,2) >= 180
-        A(i,:) = A(i,:) + 2*(270-A(i,:));
+        A(i,:) = A(i,:) + 2*(270-A(i,:)) - 180;
         end
     end
     
     if Ny(i) > y
         Ny(i) = Ny(i) - 2*(Ny(i) - y);
         if A(i,2) >= 90
-        A(i,:) = A(i,:) - 2*(A(i,:)-90);
+        A(i,:) = A(i,:) - 2*(A(i,:)-90) + 180;
         end
         if A(i,2) < 90 && A(i,2) >= 0
-        A(i,:) = A(i,:) + 2*(90-A(i,:));
+        A(i,:) = A(i,:) + 2*(90 - A(i,:)) + 180;
         end
     end
     end
@@ -252,7 +253,7 @@ for t=0:tstep:tmax
 %   h3 = pcolor(X_h3,Y_h3,A1); %%
 %! OFF
 %     colorbar
-     hold on  % overlays the scatter % keep with below 4 on to get lines
+%     hold on  % overlays the scatter % keep with below 4 on to get lines
      h1 = scatter(Ny,Nx,25,c,'filled');
      axis([0 x 0 y]);
      hold off
