@@ -1,158 +1,296 @@
-%% TO DO
+%% IMPORTANT INFO TO READ BEFORE YOU RUN THIS CODE
+
+% Create a folder in MATLAB called active_walkers_output and that will store the data
+% that you tell the program to use and the results (figures, csv) it
+% outputs. The tune-able parameters are marked with %$, so to find them
+% simply hit ctrl-F and search %$.
+
+% Everything is in units of microns and seconds.
+
+%% MAIN CONTROLS
+
+record_vid = 0; % Set to 1 if you want to record a video
+t_framegrab = 10; % nth number of sim frame to record
+
+rt_graph_setting = 'MF';
+
+% Set to 'MF' if you want to see the mean field
+% 'Agents' if you want to see the agents
+
+cells_show = 0; % Set to 1 if you want to show individual cells
+
+labels = {'density_3d' 'n' 'x' 'y' 'tmax' 'tstep' 'vmax' 'pstuck' 'athresh' 'max_run' 'min_run' 'alpha' 'cons' 'slope' 'avg_peak_vel (um/s)' 'avg_peak_vel (mm/hr)' 'R2' 'avg_peak_size' 'winsize'};
+
+folder = 'active_walkers_output/';
+name = 'test_1';
+mkdir(strcat(folder,name));
+
+file = strcat(folder,name,'/',rt_graph_setting,'_',name,'.csv'); % creates writeable CSV
+fid = fopen(file, 'w') ;
+ fprintf(fid, '%s,', labels{1,1:end-1}) ;
+ fprintf(fid, '%s\n', labels{1,end}) ;
+ fclose(fid) ;
+
+%% TO DO / DONE LIST
 
 % x. track the total number of "stuck" vs number of "swimmers"
 % 8. make some stuck forever?
+%       as a natural consequence yes
 % x. histogram the number of times a cell is stuck
 % x. incorporate "energy taxis" where cells tumble more where there is a
 % high pmf (tumbling rate is higher where glucose-g is high)
-% 2. incorporate a history effect on energy taxis
+% 2. incorporate a long-term history effect on energy taxis
+% 3. chemotactic response function that alters tumbling frequency
+%   have finite history of chemical encountered by each cell
+% for chemotaxis cut off the 
 % x. calculate steadistate of stuck vs unstuck
 % x. velocity decrease when in region of low food (doesn't make sense
 % though, more of a gradual long-term change as the pmf is depleted)
 % x. apply reflective boundary conditions on top and bottom, apply periodic
 % on sides
-% 1. measure the velocity of the peak of the moving phase boundary
+% x. measure the velocity of the peak of the moving phase boundary
 % (superimpose the cross-sections)
-% 3. apply the longer boundary case (4000 um in length by 200 um)
+% x. apply the longer boundary case (4000 um in length by 200 um)
 % 4. how much does being stuck influence the velocity of this phase
 % boundary?
+%       not much
 % 5. stuck vs swimming time and space dependence
 % given the constraints, how long do they get stuck for?
-% 6. implement easy settings for switching off graphs or components
+% x. implement easy settings for switching off graphs or components
+% x. get a csv file as an output
+% x. organize photos and csv's into a folder
+% x. match the velocity distributions to data (append 0 velocities at end)
+% 7. create an input matrix that determines initial conditions of sim
+% 8. make it so that bacteria that travel faster have a higher chance of
+% getting stuck
+% 9. power law on tumbling frequency
+% x. control density instead of cell number
+% 10. incorporate autochemotaxis and see what it does
+% x. diffusion on chemicals
+% 11. save last band configuration
 
+%% Real World 
+
+% majority of cells are not motile 5-25%
+% fit data to pdf
+% power law or gamma distribution tumbling rate
+% poisson run velocity
+% cells maintain run velocity across runs
+% random tumble angle
+% chemotactic response function
+% glucose chemotaxis
+% consumption and diffusion of chemicals
+% higher run speed gives more directional persistence = https://www.nature.com/articles/ncomms9776#supplementary-information
+
+
+%% Control Graph Output
+
+stuck_mat = 0.8;
+iter = 1; % length(stuck_mat); % repeatable
+
+color_cell = 1; % 1 to turn on to bin cell density and graph it
+color_conc = 0; % 1 to turn on to bin conc density and graph it
+max_A1 = 12; % max cell number in grid box
+
+% 'RMS' if you want to see the root mean square displacement
+
+end_graph_stuck = 0;
+
+% Set to 1 if you want to see the histogram of how long cells are stuck
+% Set to 0 if you want to save memory
+
+output_steady = 1;
+
+% Set to 1 if you want to know how many cells are swimming or not
+% Set to 0 to hide output
+
+rotational_diffusion = 1;
+
+% Set to 1 if you want rotational diffusion
+% Set to 0 if you want to save computational time
+
+velocity_dep = 0;
+
+% Set to 1 if you want velocity to depend on environment
+% Set to 0 if you want predetermined velocity
+
+batch_mode = 0;
+
+% Set to 1 if you want to iterate a bunch of parameters in a matrix
+% Set to 0 to manually do things one at a time
 
 %% Setup
 % units in micrometers
 % speeds in micrometers / sec
 
-close all
-clearvars A A1 A2 c C d h1 h2 h3 Hist_stuck N0 n_stuck n_swim Nx Ny rms T V Vrec
-
-tmax = 300; % set simulation time duration (goal is 10 mins)
-tstep = 0.1; % 0.1 is standard res because the rt round goes to 0.1 resolution
-iter = 1; % if repeatable
+tmax = 200; % set simulation time duration (goal is 10 mins) %$ %100
+tstep = 0.1; % 0.1 is standard res because the rt round goes to 0.1 resolution %$
 
 % size of area in um
-x = 400; % 400
-y = 400; % 400
+x = 800; % 400 %$
+y = 4000; % 4000 %$
 
-%OFF D = zeros(iter,3); % creates diffusion constant measurement
+if strcmp(rt_graph_setting,'RMS')
+D = zeros(iter,3); % creates diffusion constant measurement
+end
 
 for k = 1:iter
 %% Housekeeping
     
     close all
+    clearvars A A1 A1_t A2 c C d h1 h2 h3 Hist_stuck N0 n_stuck n_swim Nx Ny rms peaks T V Vrec
     
-%% Number of cells and initial condition
+%% Number of Cells and Initial Condition
 
-n = 4000; % can go up to 10e5 cells without much problem % 4000
+density_3d = 0.01; % set the 3d density of cells (assuming slice size of 5 um) % 0.0025
 
-% report the 3d density of cells (assuming slice size of 4 um)
-    n/(x*y*5) 
+n = density_3d*x*y*5 % can go up to 10e5 cells without much problem % 10000 % 100
 
-% choose 1
-% N0 = rand(n,2)*10+x/2; % center inoculation
-N0 = rand(n,2)*x; % all over inoculation
+% choose 1 layout of cells
+
+% 1 % center inoculation
+% N0 = rand(n,2)*10+x/2; 
+
+% 2 % evenly distributed all over space, merely append *x
+N0 = rand(n,2);
+N0(:,1) = N0(:,1)*x;
+N0(:,2) = N0(:,2)*y;
 
 % separate vectors for x and y coords
 Nx = N0(:,1);
 Ny = N0(:,2);
 
-%% Velocity distribution
+peaks = zeros(tmax/tstep+1,2); % recording matrix with peak value and loci
 
-vmax = 20; % scales the velocity distribution
-v = vmax*[0 0 1 1 1 1 1 1 1 1]; % [0 0 45 45 60 60 60 60 75 75];
+%% Velocity Distribution
 
+vmax = 20; % scales the velocity distribution % 20 %$
+pstuck = stuck_mat(k,1) ; % 0.1 %$
+v = vmax*[1 1 1 1 1 1 1 1 1 1 1]; % [0 0 45 45 60 60 60 60 75 75];
+istuck = round(length(v)*pstuck); % appends velocity distribution with stuck
+v(1,end+1:end+istuck) = zeros(1,istuck);
+
+V = zeros(n,2);
 for i = 1:n
-    V(i,1) = v(randi(length(v)));
+    V(i,1) = v(randi(length(v))); % column 1 can be zero
 end
+V(:,2) = V(:,1); % column 2 saves the original velocity
 
+if end_graph_stuck
 Vrec = ones(n,tmax/tstep+2);
 Vrec(:,1) = V(:,1);
+end
 
-%% Run time distribution and rules
+%% Run Time Distribution and Rules
 
-max_run = 3;
+% see chemo_response.m
+
+% https://www.desmos.com/calculator/tvb2scjlbw
+
+max_run = 3; %$ %6
 rt = max_run*ones(n,1);
 rt0 = rt;
-T = max_run*rand(n,1); % needs to be altered by local conc of glucose, glucose needs to be used up by cells
-alpha = 0.9; % factor that reduces run time based on local conc % 0.6
+T = max_run*rand(n,1); % tumble count-down vector needs to be altered by local conc of glucose, glucose needs to be used up by cells
 
-%% Tumble distribution
+alpha = 0.3; % the larger this number, the larger the factor that reduces run time based on local conc % 0.6 %$
+
+%! UNDER CONSTRUCTION %!
+
+
+%% Tumble Angle Distribution
 
 A = rand(n,3)*360; % the state of the tumbles
-                % A(:,1) is the previous angle
-                % A(:,2) is the current angle
+                % A(:,1) is the previous absolute angle at previous time
+                % A(:,2) is the current absolute angle
                 % A(:,3) is the previous angle it used to get stuck
 
-athresh = 150; % angle needed to escape a dead-end
+athresh = 150; % angle needed to escape a dead-end %$
 
-% [0 30 60 90 120 150 180];
+if rotational_diffusion
+rot_dif = zeros(n,1);
+D_rot = 1; % Hz %$
+end
 
-%% Glucose field and consumption distribution
+%% Glucose Field and Consumption Distribution
 
-slope = 5;
-cbins = 40;
-g = ones(cbins,cbins);
+Dg = 100; % Diffusion %200
+slope = y; %100 %$ % y/25 y/5
+cbins.x = x/20; %20 %$
+cbins.y = y/20; %400 %$
+g = ones(cbins.y,cbins.x);
 
-% create a gradient of the food
-for i = 1:cbins
-g(i,:) = g(i,:)*slope*i/cbins-1/4;
+% create a gradient of the food across y
+for i = 1:cbins.y
+g(i,:) = g(i,:)*slope*i/cbins.y-slope/2; % -50
 end
 g(g<0) = 0;
-g(g>1) = 1;
+% g(g>1) = 1;
 G = ones(n,1);
 
-Cx_h4 = x/(cbins*2):x/cbins:x-x/(cbins*2);
-Cy_h4 = y/(cbins*2):y/cbins:y-y/(cbins*2);
+Cx_h4 = x/(cbins.x*2):x/cbins.x:x-x/(cbins.x*2);
+Cy_h4 = y/(cbins.y*2):y/cbins.y:y-y/(cbins.y*2);
 
-cons = 0.000005; % 0.00005
+cons = 0.005; % 0.00005 %$ %0.005
 
-%% Simulation
+%% SIMULATION
 
-% figure() % rms evolution
+%% Initialize Real-time Graphs
+
+% figure() % initialize rms evolution
+if strcmp(rt_graph_setting,'RMS')
 rms = zeros(tmax/tstep+1,1);
-% h2 = plot(0:tstep:tmax,rms);
-% axis([0,tmax,0,1000])
-% 
-% h2.YDataSource = 'rms';
-% 
-figure() % scatter and color plot
-c = [rand(n,1) rand(n,1) rand(n,1)];
-nbins = 40;
+h2 = plot(0:tstep:tmax,rms);
+axis([0,tmax,0,1000])
+h2.YDataSource = 'rms';
+end
 
-X_h3 = x/(nbins*2):x/nbins:x-x/(nbins*2); %A2{1}; put below
-Y_h3 = y/(nbins*2):y/nbins:y-y/(nbins*2); %A2{2};
+c = [rand(n,1) rand(n,1) rand(n,1)]; % random colors for each agent
+nbins.x = cbins.x;
+nbins.y = cbins.y;
+
+X_h3 = x/(nbins.x*2):x/nbins.x:x-x/(nbins.x*2); %A2{1}; put below
+Y_h3 = y/(nbins.y*2):y/nbins.y:y-y/(nbins.y*2); %A2{2};
 
 Icx = discretize(Ny,X_h3); % switched because matrix format
 Icy = discretize(Nx,Y_h3);
 
 [A1,A2] = hist3([Nx,Ny],'Edges',{X_h3 Y_h3});
 
-% [C, h3] = contourf(A2{1},A2{2},A1);
+% SCRAPS [C, h3] = contourf(A2{1},A2{2},A1);
 
-% h3 = pcolor(X_h3,Y_h3,A1'); % A1 is transposed to match x y coords
+if strcmp(rt_graph_setting,'Agents')
+
+figure() % scatter and color plot
+
+if cells_show == 0
+h3 = pcolor(X_h3,Y_h3,A1'); % A1 is transposed to match x y coords
+else
 h4 = pcolor(X_h3,Y_h3,g); %% turn off to not update concentration
-hold on
+hold on % superimpose agents on top of field
 h1 = scatter(N0(:,1),N0(:,2),25,c,'filled');
 axis([0 x 0 y]);
 hold off
+end
 
 h1.XDataSource = 'Nx';
 h1.YDataSource = 'Ny';
-% h3.XData = 'X_h3'; % for evolving window
-% h3.YData = 'Y_h3';
-% h3.CData = 'A1';
 
-% figure() % mean field output
-% h5 = plot(mean(g));
-% hold on
-% h6 = plot(mean(A1));
-% hold off
+end
+
+if strcmp(rt_graph_setting,'MF') 
+figure() % mean field output initalize
+h5 = plot(mean(g));
+hold on
+h6 = plot(mean(A1));
+title(strcat(num2str(t),'sec'))
+xlabel('Distance (um)')
+ylabel('Cell Density (orange) & Food Density (blue)')
+hold off
+end
 
 for t=0:tstep:tmax
     
-%% Construct state vectors (stuck, moving, tumbling)
+%% Construct State Vectors (stuck, moving, tumbling)
  
         % countdown
         % velocity
@@ -167,13 +305,16 @@ for t=0:tstep:tmax
             
             A(i,1) = A(i,2); % sets the history
             if V(i,1) ~= 0
-                A(i,3) = A(i,2); % if its in the stuck state, it will maintain its A(i,3) value
+                A(i,3) = A(i,2); % if cell is in the stuck state, it will maintain its A(i,3) value
             end
-            A(i,2) = randi(360); % conditional change in direction
+            
+            rng_tum = randi(360) - 180; % input the experimental angle distribution
+            
+            A(i,2) = wrapTo360(A(i,2) + rng_tum); % conditional change in direction
             
             % agar tunnel condition
             if V(i,1) ~= 0
-            V(i,1) = v(randi(length(v))); % random velocity
+            V(i,1) = v(randi(length(v))); % pick random velocity in distribution
 
             else % must have a certain angle to escape
             if abs(A(i,2)-A(i,3)) >= athresh && abs(A(i,2)-A(i,3)) <= athresh+(180-athresh)*2
@@ -187,12 +328,19 @@ for t=0:tstep:tmax
         end
     end
 
-%% Calculate next positions
+%% Calculate Next Positions
 
-%     V = V.*(G)+30; % V is dependent on concentration of g?
-    
-    Nx = Nx + V(:,1).*tstep.*cosd(A(:,2));
-    Ny = Ny + V(:,1).*tstep.*sind(A(:,2));
+if velocity_dep
+     V = V.*(G)+30; % V is dependent on concentration of g? incorporate time delay
+end
+
+    % rotational diffusion
+if rotational_diffusion
+    rot_dif = normrnd(0,1,n,1)*sqrt(2*D_rot*tstep);
+end
+
+    Nx = Nx + V(:,1).*tstep.*cosd(A(:,2)+rot_dif);
+    Ny = Ny + V(:,1).*tstep.*sind(A(:,2)+rot_dif);
     
     % boundary conditions
     for i=1:n
@@ -209,91 +357,162 @@ for t=0:tstep:tmax
     % reflective boundary conditions on top and bottom
     if Ny(i) < 0
         Ny(i) = -Ny(i);
-        if A(i,2) >= 270
-        A(i,:) = A(i,:) - 2*(A(i,:)-270) - 180;
+        if A(i,2) >= 270 && A(i,2) < 360
+        A(i,:) = wrapTo360(A(i,:) - 2*(A(i,:)-270) - 180);
         end
-        if A(i,2) < 270 && A(i,2) >= 180
-        A(i,:) = A(i,:) + 2*(270-A(i,:)) - 180;
+        if A(i,2) <= 270 && A(i,2) > 180
+        A(i,:) = wrapTo360(A(i,:) + 2*(270-A(i,:)) - 180);
         end
     end
     
     if Ny(i) > y
         Ny(i) = Ny(i) - 2*(Ny(i) - y);
-        if A(i,2) >= 90
-        A(i,:) = A(i,:) - 2*(A(i,:)-90) + 180;
+        if A(i,2) >= 90 && A(i,2) < 180
+        A(i,:) = wrapTo360(A(i,:) - 2*(A(i,:)-90) + 180);
         end
-        if A(i,2) < 90 && A(i,2) >= 0
-        A(i,:) = A(i,:) + 2*(90 - A(i,:)) + 180;
+        if A(i,2) <= 90 && A(i,2) > 0
+        A(i,:) = wrapTo360(A(i,:) + 2*(90-A(i,:)) + 180);
         end
     end
     end
     
-%% Sum number of cells per gridbox
+%% Sum up the Number of Cells per Gridbox
     
     [A1,A2] = hist3([Nx,Ny],'Edges',{X_h3 Y_h3});
     
     Icy = discretize(Nx,X_h3); % switched because matrix format
     Icx = discretize(Ny,Y_h3);
-
     
-    
-%% Calculate next chemical
+%% Calculate Next Chemical
 
     g = g-A1'*cons; % eating
     g(g<0) = 0;
-    for i = 1:n
+    
+    for i = 1:n % in case any cells fall out of the sim they have a G to use
         if isnan(Icx(i))==0 && isnan(Icy(i))==0
             G(i,1) = g(Icx(i),Icy(i));
         end
     end
-    rt = round(rt0.*(1-alpha*G),1);
+    
+    % Diffusion
+    
+    % Shifted stuff for x
+    
+    sgr = circshift(g, [0 1]);
+    sgl = circshift(g, [0 -1]);
+    sgd = circshift(g, [1 0]);
+    sgu = circshift(g, [-1 0]);
+    
+    % Laplacian term for x
+    
+    dx = 20;
+    
+    laplgx = (sgr+sgl-2*g)/(dx)/(dx);     
+    laplgy = (sgd+sgu-2*g)/(dx)/(dx);
+    laplg = laplgx + laplgy;
+    
+    g = g + Dg*laplg*tstep;
+    g(end,:) = g(end-1,:);
+    g(1,:) = g(2,:);
+    
+    
+    %! UNDER CONSTRUCTION !%
+    
+    min_run = 1; %$
+    rt = round(rt0.*(1-alpha*G),1); % tumbling rate response to chemical
+    rt(rt>max_run) = max_run;
+    rt(rt<min_run) = min_run;    
     
 %% Extract Data
-    % plot rms
-    
+    % plot rms in real time
+    if strcmp(rt_graph_setting,'RMS')
     d = (Nx-x/2).^2 + (Ny-y/2).^2;
     rms(round(t/tstep+1),1) = sqrt(sum(d)./length(d));
-    
-    % refreshdata
-    
+    refreshdata
+    end
+
     % track velocities to get distribution of stuck vs non-stuck
+    if end_graph_stuck
     Vrec(:,round(t/tstep+2)) = V(:,1);
+    end
    
     
-%% If you want to observe the bacteria in real time
-    
-    % C = contourf(A2{1},A2{2},A1);
-%     t
-%     refreshdata
+%% Update Real-Time Graphs for the Cells in Real Time
+
+A1_t = mean(A1)';
+winsize = 10; % prepare to filter the noise with a moving window average %$
+b = (1/winsize)*ones(1,winsize);
+a = 1;
+A1_filt = filter(b,a,A1_t);
+
+[peak, peak_loci] = max(A1_filt); % extracts the peak
+peaks(round(t/tstep+1),1) = peak_loci*y/cbins.y;
+peaks(round(t/tstep+1),2) = peak;
 
 % mean field output to 1D cross-section
-h5 = plot(mean(g'));
-ylim([0 5])
+if mod(t,t_framegrab)==0
+if strcmp(rt_graph_setting,'MF')
+h5 = plot(Y_h3,mean(g(:,1:end-1)'));
+title(strcat(num2str(t),'sec'))
+ylim([0 n/cbins.x/cbins.y*2])
+xlim([0 y])
+xlabel('Distance (um)')
+ylabel('Cell Density (orange) & Food Density (blue)')
+
 hold on
-h6 = plot(mean(A1));
+h6 = plot(Y_h3,A1_filt); % A1_filt if you want to see the smoother version
+h7 = scatter(peak_loci*y/cbins.y, peak,50,'r','filled');
 hold off
 
-%  h3 = pcolor(X_h3,Y_h3,A1'); %% turn off to not update the cell density color
-% %   h4 = pcolor(X_h3,Y_h3,g); %% turn off to not update concentration
-%   colorbar
-%   
-%      hold on  % overlays the scatter % keep with below 4 on to get lines
-%      h1 = scatter(Nx,Ny,25,c,'filled');
-%      axis([0 x 0 y]);
-%      hold off
-     
- 
-    pause(.005)
+pause(0.001)
+end
+end
+
+if mod(t,t_framegrab)==0
+if strcmp(rt_graph_setting,'Agents')
+    if color_cell
+    h3 = pcolor(X_h3,Y_h3,A1'); %% turn off to not update the cell density color
+    colormap bone
+    colorbar
+    caxis([0 max_A1])
+    end
+    if color_conc
+    h4 = pcolor(X_h3,Y_h3,g); %% turn off to not update concentration    
+    colormap bone
+    colorbar
+    caxis([0 1])
+    end
+  
+     if cells_show
+     hold on  % overlays the scatter % keep with below 4 on to get lines
+     h1 = scatter(Nx,Ny,25,c,'filled');
+     hold off
+     end
+
+     title(strcat(num2str(t),'sec'))
+     axis([0 x 0 y]);
+     pbaspect([1 y/x 1]);
+     pause(0.001)
+end
+end
     
+if record_vid
+    if mod(t,t_framegrab)==0
+    frame(round(t/t_framegrab+1)) = getframe(gcf);
+    end
+end
 
 end
-%% Analyze
+%% Analyze Data
 
-% Diffusion coefficient
-%     F = fit(rms,[0:tstep:tmax]','poly2');
-%     D(k,:) = 1./coeffvalues(F)./2;
+if strcmp(rt_graph_setting,'RMS')
+    % Diffusion coefficient fit
+F = fit(rms,[0:tstep:tmax]','poly2');
+D(k,:) = 1./coeffvalues(F)./2;
+end
 
 % Find the portion that is stuck verses swimming
+if end_graph_stuck
     for i=1:n
         Hist_stuck(i,1) = tstep*(numel(Vrec(Vrec(i,:)==0)));
     end
@@ -302,34 +521,87 @@ end
         n_stuck(t,1) = numel(Vrec(Vrec(:,t)==0));
         n_swim(t,1) = numel(Vrec(Vrec(:,t)==20));
     end
-    
+end    
 
-        
-end
 
 %% Plots
 
-% how long on average a cell is stuck for
+% how long on average a cell is stuck for?
+if end_graph_stuck
 figure()
 hist(Hist_stuck,20)
-
 trange = (0:tstep:tmax+tstep);
 
+% is a steady state reached, and how much?
 figure()
 plot(trange,n_stuck,'r')
 hold on
 plot(trange,n_swim,'b')
 hold off
 
+% tabulates portion of stuck cells at steady state
+steady_stuck = mean(n_stuck(tmax/tstep/2:end,1));
+steady_swim = n-steady_stuck;
+stuck_frac = steady_stuck / n;
+end
+
+mint = 200;
+
+if strcmp(rt_graph_setting,'RMS')
 mean(D(:,1))
-steady_stuck = mean(n_stuck(tmax/tstep/2:end,1))
-steady_swim = n-steady_stuck
+figure()
+plot(rms)
+end
 
-% figure()
-% plot(rms)
+m = polyfit(mint:tmax/tstep, peaks(mint:tmax/tstep), 1); % find average velocity
+R = corrcoef(mint:tmax/tstep, peaks(mint:tmax/tstep));
+R2 = R.^2;
+R2 = R2(2,1); % R-squared value
 
+if color_conc
 figure()
 pcolor(Cx_h4,Cy_h4,g)
+title('Concentration at Final Time')
+colorbar
+pbaspect([1 y/x 1]);
+end
+
+avg_peak_vel = m(1,1);
+avg_peak_size = mean(peaks(mint:end,2)); % average height
+
+figure()
+plot(peaks(:,1))
+title('Peak Motion over Time')
+saveas(gcf,strcat(folder,name,'/',rt_graph_setting,'_',name,'_',num2str(avg_peak_vel),'_peak.jpg'))
+
+
+%% Write CSV Report File
+
+%! UNDER CONSTRUCTION
+
+labels = {'density_3d' 'n' 'x' 'y' 'tmax' 'tstep' 'vmax' 'pstuck' 'athresh' 'max_run' 'min_run' 'alpha' 'cons' 'slope' 'avg_peak_vel (um/s)' 'avg_peak_vel (mm/hr)' 'R2' 'avg_peak_size' 'winsize'};
+values = [density_3d n x y tmax tstep vmax pstuck athresh max_run min_run alpha cons slope avg_peak_vel avg_peak_vel*3.6 R2 avg_peak_size winsize];
+dlmwrite(file, values, '-append') ; % write params
+
+if end_graph_stuck
+stuck_frac
+end
+
+if strcmp(rt_graph_setting,'MF')
+avg_peak_vel
+avg_peak_size
+end
+        
+end
+
+if record_vid
+    vidfile = strcat(folder,'/',name,'/video_',name);
+    codec = 'MPEG-4';
+    video = VideoWriter(vidfile,codec);
+    open(video)
+    writeVideo(video,frame)
+    close(video)
+end
 
 %% Comments / Notes
 
@@ -351,3 +623,26 @@ pcolor(Cx_h4,Cy_h4,g)
 % exp(-x) decay
 
 % a steady-state between movers and non-movers is reached in this model
+% 0.5 to 1.0 um/s band speed is the goal
+% 
+% cells occupy about 0.004 of space in microscope
+% 0.0015 cells per um^2
+%
+
+%% Beta 0.1 Results
+
+% changing alpha does not change band speed appreciably, but raising alpha
+% raises avg peak height slightly
+% 
+% decreasing overall frequency of tumbles resulted in higher peaks, but did
+% not affect band speed as much
+%
+% slope of gradient seems to be the greatest determining factor of speed of
+% peak by e^-slope
+%
+% Cells adjust tumbling rate depending on level of food in environment
+
+%% Beta 0.2 Results
+
+% Changes: chemotaxis response function
+% Cells adjust tumbling rate depending on gradient of food in environment
