@@ -163,17 +163,29 @@ peaks = zeros(tmax/tstep+1,2); % recording matrix with peak value and loci
 
 %% Velocity Distribution
 
-vmax = 20; % scales the velocity distribution % 20 %$
+pdf_v = [];
+v_ave = 20;
+v = v_ave/10:v_ave/10:v_ave*2;
+pdf_v = normpdf(v,v_ave,v_ave/3);
+% vmax = 20; % scales the velocity distribution % 20 %$
 pstuck = 0.2 ; % 0.1 0.8 %$ 
-v = vmax*[1 1 1 1 1 1 1 1 1 1 1]; % [0 0 45 45 60 60 60 60 75 75];
-istuck = round(length(v)*pstuck); % appends velocity distribution with stuck
-v(1,end+1:end+istuck) = zeros(1,istuck);
+%v = vmax*[1 1 1 1 1 1 1 1 1 1 1]; % [0 0 45 45 60 60 60 60 75 75];
+pdf_v = [pstuck/(1-pstuck) pdf_v]; % appends velocity distribution with stuck
+v = [0 v];
+
+pdf_v = pdf_v / sum(pdf_v);
+cdf_v = cumsum(pdf_v);
+[cdf_v, mask] = unique(cdf_v);
+v = v(mask);
 
 V = zeros(n,2);
-for i = 1:n
-    V(i,1) = v(randi(length(v))); % column 1 can be zero
-end
+V(:,1) = interp1(cdf_v,v,rand(n,1),'nearest'); % column 1 can be zero
+V(isnan(V)) = 0;
 V(:,2) = V(:,1); % column 2 saves the original velocity
+
+% probability to get stuck
+stuck = 0.2; % see data
+Vpick = [zeros(n,10*stuck) V(:,2).*ones(n,10*(1-stuck))];
 
 if end_graph_stuck
 Vrec = ones(n,tmax/tstep+2);
@@ -305,6 +317,7 @@ for t=0:tstep:tmax
         if T(i,1)<= 0 % if the run is over
             
             A(i,1) = A(i,2); % sets the history
+            
             if V(i,1) ~= 0
                 A(i,3) = A(i,2); % if cell is in the stuck state, it will maintain its A(i,3) value
             end
@@ -315,13 +328,11 @@ for t=0:tstep:tmax
             
             % agar tunnel condition
             if V(i,1) ~= 0
-            V(i,1) = v(randi(length(v))); % pick random velocity in distribution
+            V(i,1) = Vpick(i,randi(length(Vpick))); % pick random velocity in distribution
 
             else % must have a certain angle to escape
-            if abs(A(i,2)-A(i,3)) >= athresh && abs(A(i,2)-A(i,3)) <= athresh+(180-athresh)*2
-                V(i,1) = v(randi(length(v)));
-            else % if doesn't tumble out it stays there
-                V(i,1) = 0;
+            if abs(A(i,2)-A(i,3)) >= athresh && abs(A(i,2)-A(i,3)) <= athresh+(180-athresh)*2 && V(i,2) ~= 0
+                V(i,1) = V(i,2);
             end
             end
     

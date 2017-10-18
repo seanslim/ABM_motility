@@ -8,7 +8,7 @@ tic
 %% MAIN CONTROLS
 
 record_vid = 0; % Set to 1 if you want to record a video
-t_framegrab = 5;
+t_framegrab = 0.1;
 
 rt_graph_setting = 'Agents';
 cells_show = 1; % Set to 1 if you want to show individual cells
@@ -43,8 +43,8 @@ tmax = 500; % set simulation time duration (goal is 10 mins) %$ %100
 tstep = 0.05; % 0.1 is standard res because the rt round goes to 0.1 resolution %$
 
 % size of area in um
-x = 400; % 400 %$
-y = 4000; % 4000 %$ %800
+x = 200; % 400 %$
+y = 200; % 4000 %$ %800
 
 if strcmp(rt_graph_setting,'RMS')
 D = zeros(iter,3); % creates diffusion constant measurement
@@ -57,7 +57,7 @@ end
     
 %% Number of Cells and Initial Condition
 
-density_3d = 0.001; % set the 3d density of cells (assuming slice size of 5 um) % 0.0025 or 4 times that
+density_3d = 0.0001; % set the 3d density of cells (assuming slice size of 5 um) % 0.0025 or 4 times that
 
 n = density_3d*x*y*5 % can go up to 10e5 cells without much problem % 10000 % 100
 
@@ -77,17 +77,30 @@ Ny = N0(:,2);
 
 %% Velocity Distribution
 
-vmax = 20; % scales the velocity distribution % 20 %$
-pstuck = 0 ; % 0.8 %$
-v = vmax*[1 1 1 1 1 1 1 1 1 1 1]; % [0 0 45 45 60 60 60 60 75 75];
-istuck = round(length(v)*pstuck); % appends velocity distribution with stuck
-v(1,end+1:end+istuck) = zeros(1,istuck);
+pdf_v = [];
+v_ave = 20;
+v = v_ave/10:v_ave/10:v_ave*2;
+pdf_v = normpdf(v,v_ave,v_ave/3);
+% vmax = 20; % scales the velocity distribution % 20 %$
+pstuck = 0.2 ; % 0.1 0.8 %$  % percentage of cells that are immobile at beginning
+%v = vmax*[1 1 1 1 1 1 1 1 1 1 1]; % [0 0 45 45 60 60 60 60 75 75];
+pdf_v = [pstuck/(1-pstuck) pdf_v]; % appends velocity distribution with stuck
+v = [0 v];
+
+pdf_v = pdf_v / sum(pdf_v);
+cdf_v = cumsum(pdf_v);
+[cdf_v, mask] = unique(cdf_v);
+v = v(mask);
 
 V = zeros(n,2);
-for i = 1:n
-    V(i,1) = v(randi(length(v))); % column 1 can be zero
-end
+V(:,1) = interp1(cdf_v,v,rand(n,1),'nearest'); % column 1 can be zero
+V(isnan(V)) = 0;
 V(:,2) = V(:,1); % column 2 saves the original velocity
+
+% probability to get stuck
+stuck = 0.2; % see data
+Vpick = [zeros(n,10*stuck) V(:,2).*ones(n,10*(1-stuck))];
+athresh = 150;
 
 %% Run Time Distribution and Rules
 
@@ -106,6 +119,20 @@ if rotational_diffusion
 rot_dif = zeros(n,1);
 D_rot = 1; % Hz %$
 end
+
+%!!!
+theta = -170:10:180;
+%data = ?
+%p_theta = interp1(length(data),data,theta,'spline')
+pdf_theta = 1/2*(1+cosd(theta)); % psuedomonas: 1/16*(3+15*cosd(theta)*cosd(theta));
+pdf_theta = pdf_theta / sum(pdf_theta);
+
+cdf_theta = cumsum(pdf_theta);
+[cdf_theta, mask] = unique(cdf_theta);
+theta = theta(mask);
+theta = [-180 theta];
+cdf_theta = [0 cdf_theta];
+%rng_tum = interp1(cdf_theta,theta,rand(1,25));
 
 %% Glucose Field and Consumption Distribution
 
@@ -155,20 +182,6 @@ Y_h3 = 0:y/nbins.y:y; %A2{2};
 Icx = discretize(Ny,X_h3); % switched because matrix format
 Icy = discretize(Nx,Y_h3);
 
-%% Tumbling Angle Distribution
-
-%!!!
-theta = -170:10:180;
-%data = ?
-%p_theta = interp1(length(data),data,theta,'spline')
-pdf_theta = 1/2*(1+cosd(theta)); % psuedomonas: 1/16*(3+15*cosd(theta)*cosd(theta));
-pdf_theta = pdf_theta / sum(pdf_theta);
-
-cdf_theta = cumsum(pdf_theta);
-[cdf_theta, mask] = unique(cdf_theta);
-theta = theta(mask);
-rng_tum = interp1(cdf_theta,theta,rand(1,25));
-
 for t=0:tstep:tmax
     
 %% Construct State Vectors (stuck, moving, tumbling)
@@ -179,15 +192,34 @@ for t=0:tstep:tmax
     
     for i=1:n            
         if T(i,1)<= 0 % if the run is over            
-            rng_tum = interp1(cdf_theta,theta,rand(1)); % input the experimental angle distribution
+            rng_tum = interp1(cdf_theta,theta,rand(1),'nearest'); % input the experimental angle distribution
+
+            A(i,1) = A(i,2); % sets the history
             
-            A(i,2) = wrapTo360(A(i,2) + rng_tum); % conditional change in direction
+            if V(i,1) ~= 0
+                A(i,3) = A(i,2); % if cell is in the stuck state, it will maintain its A(i,3) value
+            end
+            
+            A(i,2) = wrapTo360(A(i,2) + rng_tum); % conditional change in direction !!!
+            
+            if V(i,1) ~= 0
+            V(i,1) = Vpick(i,randi(length(Vpick(1,:)))); % pick random velocity in distribution
+
+            else % must have a certain angle to escape
+            if abs(A(i,2)-A(i,3)) >= athresh && abs(A(i,2)-A(i,3)) <= athresh+(180-athresh)*2 && V(i,2) ~= 0
+                V(i,1) = V(i,2);
+            end
+            end
             
             T(i) = T(i)+rt(i); % resets the clock
         end
         
-        if isnan(T(i))
+        if isnan(T(i)) %!!!
             error('T has received an NaN')
+        end
+        
+        if isnan(A(i,2)) %!!!
+            error('A has received an NaN')
         end
     end
 
