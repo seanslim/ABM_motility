@@ -12,7 +12,7 @@
 record_vid = 0; % Set to 1 if you want to record a video
 t_framegrab = 10; % nth number of sim frame to record
 
-rt_graph_setting = 'MF';
+rt_graph_setting = 'Agents'; %#
 
 % Set to 'MF' if you want to see the mean field
 % 'Agents' if you want to see the agents
@@ -85,7 +85,6 @@ fid = fopen(file, 'w') ;
 
 %% Control Graph Output
 
-stuck_mat = 0.8;
 iter = 1; % length(stuck_mat); % repeatable
 
 color_cell = 1; % 1 to turn on to bin cell density and graph it
@@ -123,7 +122,7 @@ batch_mode = 0;
 % units in micrometers
 % speeds in micrometers / sec
 
-tmax = 200; % set simulation time duration (goal is 10 mins) %$ %100
+tmax = 260; % set simulation time duration (goal is 10 mins) %$ %100
 tstep = 0.1; % 0.1 is standard res because the rt round goes to 0.1 resolution %$
 
 % size of area in um
@@ -142,7 +141,7 @@ for k = 1:iter
     
 %% Number of Cells and Initial Condition
 
-density_3d = 0.01; % set the 3d density of cells (assuming slice size of 5 um) % 0.0025
+density_3d = 0.0025; % set the 3d density of cells (assuming slice size of 5 um) % 0.0025 or 4 times that
 
 n = density_3d*x*y*5 % can go up to 10e5 cells without much problem % 10000 % 100
 
@@ -165,7 +164,7 @@ peaks = zeros(tmax/tstep+1,2); % recording matrix with peak value and loci
 %% Velocity Distribution
 
 vmax = 20; % scales the velocity distribution % 20 %$
-pstuck = stuck_mat(k,1) ; % 0.1 %$
+pstuck = 0.2 ; % 0.1 0.8 %$ 
 v = vmax*[1 1 1 1 1 1 1 1 1 1 1]; % [0 0 45 45 60 60 60 60 75 75];
 istuck = round(length(v)*pstuck); % appends velocity distribution with stuck
 v(1,end+1:end+istuck) = zeros(1,istuck);
@@ -184,15 +183,14 @@ end
 %% Run Time Distribution and Rules
 
 % see chemo_response.m
-
 % https://www.desmos.com/calculator/tvb2scjlbw
 
-max_run = 3; %$ %6
-rt = max_run*ones(n,1);
-rt0 = rt;
-T = max_run*rand(n,1); % tumble count-down vector needs to be altered by local conc of glucose, glucose needs to be used up by cells
+ave_run = 0.8; %$
+rt = round(exprnd(ave_run,n,1),1); % next run time, changes based on g
+% rt0 = rt;
+T = round(exprnd(ave_run,n,1),1); % initial tumble count-down vector
 
-alpha = 0.3; % the larger this number, the larger the factor that reduces run time based on local conc % 0.6 %$
+alpha = 0.6; % the larger this number, the larger the factor that reduces run time based on local conc % 0.6 %$
 
 %! UNDER CONSTRUCTION %!
 
@@ -214,7 +212,7 @@ end
 %% Glucose Field and Consumption Distribution
 
 Dg = 100; % Diffusion %200
-slope = y; %100 %$ % y/25 y/5
+slope = y/25; %100 %$ % y/25 y/5
 cbins.x = x/20; %20 %$
 cbins.y = y/20; %400 %$
 g = ones(cbins.y,cbins.x);
@@ -227,10 +225,10 @@ g(g<0) = 0;
 % g(g>1) = 1;
 G = ones(n,1);
 
-Cx_h4 = x/(cbins.x*2):x/cbins.x:x-x/(cbins.x*2);
-Cy_h4 = y/(cbins.y*2):y/cbins.y:y-y/(cbins.y*2);
+Cx_h4 = 0:x/cbins.x:x;
+Cy_h4 = 0:y/cbins.y:y;
 
-cons = 0.005; % 0.00005 %$ %0.005
+cons = 0.002; % 0.00005 %$ %0.005
 
 %% SIMULATION
 
@@ -248,11 +246,11 @@ c = [rand(n,1) rand(n,1) rand(n,1)]; % random colors for each agent
 nbins.x = cbins.x;
 nbins.y = cbins.y;
 
-X_h3 = x/(nbins.x*2):x/nbins.x:x-x/(nbins.x*2); %A2{1}; put below
-Y_h3 = y/(nbins.y*2):y/nbins.y:y-y/(nbins.y*2); %A2{2};
+X_h3 = 0:x/nbins.x:x-x/nbins.x; %A2{1}; put below
+Y_h3 = 0:y/nbins.y:y-y/nbins.y; %A2{2};
 
-Icx = discretize(Ny,X_h3); % switched because matrix format
-Icy = discretize(Nx,Y_h3);
+    Icx = discretize(Ny,[Y_h3 y]); % switched because matrix format
+    Icy = discretize(Nx,[X_h3 x]);
 
 [A1,A2] = hist3([Nx,Ny],'Edges',{X_h3 Y_h3});
 
@@ -282,7 +280,7 @@ figure() % mean field output initalize
 h5 = plot(mean(g));
 hold on
 h6 = plot(mean(A1));
-title(strcat(num2str(t),'sec'))
+%title(strcat(num2str(t),'sec'))
 xlabel('Distance (um)')
 ylabel('Cell Density (orange) & Food Density (blue)')
 hold off
@@ -297,9 +295,12 @@ for t=0:tstep:tmax
         % angle
     T= T-tstep;
     
+    
+    
     for i=1:n
             
         % A(:,1) = A(:,2);
+        %%%%%% Get indices should be faster
         
         if T(i,1)<= 0 % if the run is over
             
@@ -380,14 +381,15 @@ end
     
     [A1,A2] = hist3([Nx,Ny],'Edges',{X_h3 Y_h3});
     
-    Icy = discretize(Nx,X_h3); % switched because matrix format
-    Icx = discretize(Ny,Y_h3);
+    Icx = discretize(Ny,[Y_h3 y]); % switched because matrix format
+    Icy = discretize(Nx,[X_h3 x]);
     
 %% Calculate Next Chemical
 
     g = g-A1'*cons; % eating
     g(g<0) = 0;
     
+   %!!!
     for i = 1:n % in case any cells fall out of the sim they have a G to use
         if isnan(Icx(i))==0 && isnan(Icy(i))==0
             G(i,1) = g(Icx(i),Icy(i));
@@ -415,10 +417,12 @@ end
     g(end,:) = g(end-1,:);
     g(1,:) = g(2,:);
     
-    
+%% Chemotaxis
     %! UNDER CONSTRUCTION !%
     
-    min_run = 1; %$
+    min_run = 0.2; %$
+    max_run = 10;
+    rt0 = round(exprnd(ave_run,n,1),1);
     rt = round(rt0.*(1-alpha*G),1); % tumbling rate response to chemical
     rt(rt>max_run) = max_run;
     rt(rt<min_run) = min_run;    
