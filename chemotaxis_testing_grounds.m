@@ -1,4 +1,5 @@
 %% Single Cell Chemotaxis Testing Grounds
+%TODO: Match CMC with experiments with glucose
 
 tic
 
@@ -8,7 +9,7 @@ tic
 %% MAIN CONTROLS
 
 record_vid = 0; % Set to 1 if you want to record a video
-t_framegrab = 0.1;
+t_framegrab = 20; %20
 
 rt_graph_setting = 'Agents';
 cells_show = 1; % Set to 1 if you want to show individual cells
@@ -25,6 +26,8 @@ mkdir(strcat(folder,name));
 
 iter = 1; % length(stuck_mat); % repeatable
 
+for j = 1:iter
+
 color_conc = 0; % 1 to turn on to bin conc density and graph it
 max_A1 = 12; % max cell number in grid box
 
@@ -39,12 +42,12 @@ rotational_diffusion = 1;
 % units in micrometers
 % speeds in micrometers / sec
 
-tmax = 500; % set simulation time duration (goal is 10 mins) %$ %100
+tmax = 400; % set simulation time duration (goal is 10 mins) %$ %100
 tstep = 0.05; % 0.1 is standard res because the rt round goes to 0.1 resolution %$
 
 % size of area in um
-x = 200; % 400 %$
-y = 200; % 4000 %$ %800
+x = 400; % 400 %$
+y = 2000; % 4000 %$ %800
 
 if strcmp(rt_graph_setting,'RMS')
 D = zeros(iter,3); % creates diffusion constant measurement
@@ -52,7 +55,7 @@ end
 
 %% Housekeeping
     
-    close all
+    %close all
     clearvars A A1 A1_t A2 c C d h1 h2 h3 Hist_stuck N0 n_stuck n_swim Nx Ny rms peaks T V Vrec
     
 %% Number of Cells and Initial Condition
@@ -82,10 +85,13 @@ v_ave = 20;
 v = v_ave/10:v_ave/10:v_ave*2;
 pdf_v = normpdf(v,v_ave,v_ave/3);
 % vmax = 20; % scales the velocity distribution % 20 %$
-pstuck = 0.2 ; % 0.1 0.8 %$  % percentage of cells that are immobile at beginning
+immobile = 0; % 0.1 0.8 %$  % percentage of cells that are immobile at beginning
 %v = vmax*[1 1 1 1 1 1 1 1 1 1 1]; % [0 0 45 45 60 60 60 60 75 75];
-pdf_v = [pstuck/(1-pstuck) pdf_v]; % appends velocity distribution with stuck
+
+if immobile > 0
+pdf_v = [immobile/(1-immobile) pdf_v]; % appends velocity distribution with stuck
 v = [0 v];
+end
 
 pdf_v = pdf_v / sum(pdf_v);
 cdf_v = cumsum(pdf_v);
@@ -98,8 +104,10 @@ V(isnan(V)) = 0;
 V(:,2) = V(:,1); % column 2 saves the original velocity
 
 % probability to get stuck
-stuck = 0.2; % see data
+stuck = 0; % see data
+if stuck > 0
 Vpick = [zeros(n,10*stuck) V(:,2).*ones(n,10*(1-stuck))];
+end
 athresh = 150;
 
 %% Run Time Distribution and Rules
@@ -107,7 +115,7 @@ athresh = 150;
 % see chemo_response.m
 % https://www.desmos.com/calculator/tvb2scjlbw
 
-ave_run = 0.6; %$
+ave_run = 0.6; %$ change this and you have to change the chemo_response function
 rt = round(exprnd(ave_run,n,1),1); % next run time, changes based on g
 T = round(exprnd(ave_run,n,1),1); % initial tumble count-down vector
 convolution = zeros(n,1); % initial convolution state !!!
@@ -136,17 +144,19 @@ cdf_theta = [0 cdf_theta];
 
 %% Glucose Field and Consumption Distribution
 
-slope = 150; %100 %$ % y/25 y/5 %30
-cbins.x = x; %20 %$ %x/20
-cbins.y = y; %400 %$ %y/20
+binsize = 2;
+slope = 0.05; %100 %$ % y/25 y/5 %30 %0.1 %0.02
+cbins.x = x/binsize; %20 %$ %x/20
+cbins.y = y/binsize; %400 %$ %y/20
 g = ones(cbins.y,cbins.x);
+g_max = slope*y;
 
-% create a gradient of the food across y
+% create a gradient of the food across y %!
 for i = 1:cbins.y
-g(i,:) = g(i,:)*slope*i/cbins.y; % -50
+g(i,:) = g(i,:)*slope*i*y/cbins.y - g_max/4; % -50 %!!!
 end
 g(g<0) = 0;
-g(g>slope*y/2) = slope*y/2;
+g(g>g_max/4) = g_max/4;
 
 if chemo1 %!!!
 G = ones(n,1)*slope*y/2;
@@ -160,9 +170,15 @@ end
 Cx_h4 = x/(cbins.x*2):x/cbins.x:x-x/(cbins.x*2);
 Cy_h4 = y/(cbins.y*2):y/cbins.y:y-y/(cbins.y*2);
 
+%!!!
+figure()
+plot(g(:,1))
+
 %% SIMULATION
 
 %% Initialize Real-time Graphs
+
+figure()
 
 % figure() % initialize rms evolution
 if strcmp(rt_graph_setting,'RMS')
@@ -202,12 +218,14 @@ for t=0:tstep:tmax
             
             A(i,2) = wrapTo360(A(i,2) + rng_tum); % conditional change in direction !!!
             
+            if stuck > 0
             if V(i,1) ~= 0
             V(i,1) = Vpick(i,randi(length(Vpick(1,:)))); % pick random velocity in distribution
 
             else % must have a certain angle to escape
             if abs(A(i,2)-A(i,3)) >= athresh && abs(A(i,2)-A(i,3)) <= athresh+(180-athresh)*2 && V(i,2) ~= 0
                 V(i,1) = V(i,2);
+            end
             end
             end
             
@@ -284,8 +302,8 @@ Icy = discretize(Nx,X_h3,'IncludedEdge','right');
     
 %% Chemotaxis
 
-    min_run = 0.2; %$
-    max_run = 5;
+    min_run = 0; %$ %0.2
+    max_run = 5; %$
 
 if chemo2
     convolution = zeros(n,1); % reset convolution state !!!
@@ -337,6 +355,8 @@ if strcmp(rt_graph_setting,'Agents')
      title(strcat(num2str(t),'sec'))
      axis([0 x 0 y]);
      pbaspect([1 y/x 1]);
+     ylabel('Microns')
+     xlabel('Microns')
      pause(0.001)
 end
 end
@@ -348,3 +368,18 @@ end
 end
 
 toc
+
+% hold on
+% histogram(rt,'BinEdges',0.2:0.1:5)
+% hold off
+% pause(0.01)
+end
+
+histogram2(Nx,Ny,20,'DisplayStyle','tile')
+
+%% NOTES
+
+% When there is no slope, the average run is a classic exponential
+% distribution. But with slope, average run time is altered, yet that only
+% sets the distribution. Is it better to alter the number of the drawn run
+% time itself?
