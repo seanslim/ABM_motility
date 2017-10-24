@@ -12,7 +12,7 @@
 record_vid = 0; % Set to 1 if you want to record a video
 t_framegrab = 10; % nth number of sim frame to record
 
-rt_graph_setting = 'Agents'; %#
+rt_graph_setting = 'MF'; %#
 
 % Set to 'MF' if you want to see the mean field
 % 'Agents' if you want to see the agents
@@ -34,13 +34,14 @@ fid = fopen(file, 'w') ;
 %% TO DO / DONE LIST
 
 % x. track the total number of "stuck" vs number of "swimmers"
-% 8. make some stuck forever?
+% x. make some stuck forever?
 %       as a natural consequence yes
+%       incorporated nonetheless
 % x. histogram the number of times a cell is stuck
 % x. incorporate "energy taxis" where cells tumble more where there is a
 % high pmf (tumbling rate is higher where glucose-g is high)
 % 2. incorporate a long-term history effect on energy taxis
-% 3. chemotactic response function that alters tumbling frequency
+% x. chemotactic response function that alters tumbling frequency
 %   have finite history of chemical encountered by each cell
 % for chemotaxis cut off the 
 % x. calculate steadistate of stuck vs unstuck
@@ -51,10 +52,10 @@ fid = fopen(file, 'w') ;
 % x. measure the velocity of the peak of the moving phase boundary
 % (superimpose the cross-sections)
 % x. apply the longer boundary case (4000 um in length by 200 um)
-% 4. how much does being stuck influence the velocity of this phase
+% x. how much does being stuck influence the velocity of this phase
 % boundary?
 %       not much
-% 5. stuck vs swimming time and space dependence
+% 5. measure stuck vs swimming time and space dependence in and near band
 % given the constraints, how long do they get stuck for?
 % x. implement easy settings for switching off graphs or components
 % x. get a csv file as an output
@@ -67,7 +68,10 @@ fid = fopen(file, 'w') ;
 % x. control density instead of cell number
 % 10. incorporate autochemotaxis and see what it does
 % x. diffusion on chemicals
-% 11. save last band configuration
+% 11. save last band configuration (Nx Ny convolution rt)
+% 12. bin dependence?
+% 13. calculate CMC, value of ave_run_chem in space and time
+%       https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3164075/
 
 %% Real World 
 
@@ -118,6 +122,10 @@ batch_mode = 0;
 % Set to 1 if you want to iterate a bunch of parameters in a matrix
 % Set to 0 to manually do things one at a time
 
+% Choose tumbling probability modulation parameter
+chemo1 = 0; % Energy taxis
+chemo2 = 1; % Classic chemotaxis
+
 %% Setup
 % units in micrometers
 % speeds in micrometers / sec
@@ -141,7 +149,7 @@ for k = 1:iter
     
 %% Number of Cells and Initial Condition
 
-density_3d = 0.0025; % set the 3d density of cells (assuming slice size of 5 um) % 0.0025 or 4 times that
+density_3d = 0.0001; % set the 3d density of cells (assuming slice size of 5 um) % 0.0025 or 4 times that
 
 n = density_3d*x*y*5 % can go up to 10e5 cells without much problem % 10000 % 100
 
@@ -168,10 +176,13 @@ v_ave = 20;
 v = v_ave/10:v_ave/10:v_ave*2;
 pdf_v = normpdf(v,v_ave,v_ave/3);
 % vmax = 20; % scales the velocity distribution % 20 %$
-pstuck = 0.2 ; % 0.1 0.8 %$ 
+immobile = 0; % 0.1 0.8 %$  % percentage of cells that are immobile at beginning
 %v = vmax*[1 1 1 1 1 1 1 1 1 1 1]; % [0 0 45 45 60 60 60 60 75 75];
-pdf_v = [pstuck/(1-pstuck) pdf_v]; % appends velocity distribution with stuck
+
+if immobile > 0
+pdf_v = [immobile/(1-immobile) pdf_v]; % appends velocity distribution with stuck
 v = [0 v];
+end
 
 pdf_v = pdf_v / sum(pdf_v);
 cdf_v = cumsum(pdf_v);
@@ -184,8 +195,10 @@ V(isnan(V)) = 0;
 V(:,2) = V(:,1); % column 2 saves the original velocity
 
 % probability to get stuck
-stuck = 0.2; % see data
+stuck = 0; % see data %0.2
+if stuck > 0
 Vpick = [zeros(n,10*stuck) V(:,2).*ones(n,10*(1-stuck))];
+end
 
 if end_graph_stuck
 Vrec = ones(n,tmax/tstep+2);
@@ -197,50 +210,78 @@ end
 % see chemo_response.m
 % https://www.desmos.com/calculator/tvb2scjlbw
 
+if chemo1
 ave_run = 0.8; %$
+alpha = 0.6; % the larger this number, the larger the factor that reduces run time based on local conc % 0.6 %$
+end
+
+if chemo2
+ave_run = 0.6;
+convolution = zeros(n,1); % initial convolution state for chemotactic response function
+end
+
 rt = round(exprnd(ave_run,n,1),1); % next run time, changes based on g
 % rt0 = rt;
 T = round(exprnd(ave_run,n,1),1); % initial tumble count-down vector
 
-alpha = 0.6; % the larger this number, the larger the factor that reduces run time based on local conc % 0.6 %$
-
-%! UNDER CONSTRUCTION %!
-
-
 %% Tumble Angle Distribution
 
-A = rand(n,3)*360; % the state of the tumbles
+athresh = 150; % angle needed to escape a dead-end %$
+
+A = rand(n,3)*360;
                 % A(:,1) is the previous absolute angle at previous time
                 % A(:,2) is the current absolute angle
                 % A(:,3) is the previous angle it used to get stuck
-
-athresh = 150; % angle needed to escape a dead-end %$
 
 if rotational_diffusion
 rot_dif = zeros(n,1);
 D_rot = 1; % Hz %$
 end
 
+theta = -170:10:180;
+%data = ?
+%p_theta = interp1(length(data),data,theta,'spline')
+pdf_theta = 1/2*(1+cosd(theta)); % psuedomonas: 1/16*(3+15*cosd(theta)*cosd(theta));
+pdf_theta = pdf_theta / sum(pdf_theta);
+
+cdf_theta = cumsum(pdf_theta);
+[cdf_theta, mask] = unique(cdf_theta);
+theta = theta(mask);
+theta = [-180 theta];
+cdf_theta = [0 cdf_theta];
+%rng_tum = interp1(cdf_theta,theta,rand(1,25));
+
 %% Glucose Field and Consumption Distribution
 
 Dg = 100; % Diffusion %200
-slope = y/25; %100 %$ % y/25 y/5
-cbins.x = x/20; %20 %$
-cbins.y = y/20; %400 %$
-g = ones(cbins.y,cbins.x);
 
-% create a gradient of the food across y
+binsize = 20; %2
+slope = 0.05; %100 %$ % y/25 y/5 %30 %0.1 %0.02
+cbins.x = x/binsize; %20 %$ %x/20
+cbins.y = y/binsize; %400 %$ %y/20
+g = ones(cbins.y,cbins.x);
+g_max = slope*y;
+
+% create a gradient of the food across y %!
 for i = 1:cbins.y
-g(i,:) = g(i,:)*slope*i/cbins.y-slope/2; % -50
+g(i,:) = g(i,:)*slope*i*y/cbins.y - g_max/4; % -50 %!!!
 end
 g(g<0) = 0;
-% g(g>1) = 1;
-G = ones(n,1);
+g(g>g_max/4) = g_max/4;
+
+if chemo1 %!!!
+G = ones(n,1)*slope*y/2;
+end
+
+if chemo2
+cwin = ceil(10*ave_run); %!!!
+G = zeros(n,cwin/tstep); %!!!
+end
 
 Cx_h4 = 0:x/cbins.x:x;
 Cy_h4 = 0:y/cbins.y:y;
 
-cons = 0.002; % 0.00005 %$ %0.005
+cons = 0; % 0.00005 %$ %0.005 %0.002
 
 %% SIMULATION
 
@@ -316,19 +357,19 @@ for t=0:tstep:tmax
         
         if T(i,1)<= 0 % if the run is over
             
+            rng_tum = interp1(cdf_theta,theta,rand(1),'nearest'); % input the experimental angle distribution    
+            
             A(i,1) = A(i,2); % sets the history
             
             if V(i,1) ~= 0
                 A(i,3) = A(i,2); % if cell is in the stuck state, it will maintain its A(i,3) value
             end
             
-            rng_tum = randi(360) - 180; % input the experimental angle distribution
-            
             A(i,2) = wrapTo360(A(i,2) + rng_tum); % conditional change in direction
             
             % agar tunnel condition
             if V(i,1) ~= 0
-            V(i,1) = Vpick(i,randi(length(Vpick))); % pick random velocity in distribution
+            V(i,1) = Vpick(i,randi(length(Vpick(1,:)))); % pick random velocity in distribution
 
             else % must have a certain angle to escape
             if abs(A(i,2)-A(i,3)) >= athresh && abs(A(i,2)-A(i,3)) <= athresh+(180-athresh)*2 && V(i,2) ~= 0
@@ -337,6 +378,17 @@ for t=0:tstep:tmax
             end
     
             T(i) = T(i)+rt(i); % resets the clock
+        
+        % Errors
+            
+        if isnan(T(i)) %!!!
+            error('T has received an NaN')
+        end
+        
+        if isnan(A(i,2)) %!!!
+            error('A has received an NaN')
+        end
+        
         end
     end
 
@@ -429,14 +481,29 @@ end
     g(1,:) = g(2,:);
     
 %% Chemotaxis
-    %! UNDER CONSTRUCTION !%
     
-    min_run = 0.2; %$
-    max_run = 10;
+    min_run = 0; %$ %0.2
+    max_run = 5; %$
+    
+if chemo1
     rt0 = round(exprnd(ave_run,n,1),1);
     rt = round(rt0.*(1-alpha*G),1); % tumbling rate response to chemical
     rt(rt>max_run) = max_run;
-    rt(rt<min_run) = min_run;    
+    rt(rt<min_run) = min_run;
+end
+
+if chemo2
+    convolution = zeros(n,1); % reset convolution state !!!
+    for t1=tstep:tstep:cwin %!!!
+        convolution = convolution + tstep*chemo_response(cwin-t1,ave_run,0.018).*G(:,round(t1/tstep));
+    end
+    ave_run_chem = ave_run./(1-convolution); %!!! 
+    ave_run_chem(ave_run_chem>max_run) = max_run;
+    ave_run_chem(ave_run_chem<min_run) = min_run;
+    rt = exprnd(ave_run_chem); %!!!
+    rt(rt>max_run) = max_run;
+    rt(rt<min_run) = min_run;
+end
     
 %% Extract Data
     % plot rms in real time
@@ -507,6 +574,8 @@ if strcmp(rt_graph_setting,'Agents')
      title(strcat(num2str(t),'sec'))
      axis([0 x 0 y]);
      pbaspect([1 y/x 1]);
+     ylabel('Microns')
+     xlabel('Microns')
      pause(0.001)
 end
 end
@@ -594,8 +663,8 @@ saveas(gcf,strcat(folder,name,'/',rt_graph_setting,'_',name,'_',num2str(avg_peak
 
 %! UNDER CONSTRUCTION
 
-labels = {'density_3d' 'n' 'x' 'y' 'tmax' 'tstep' 'vmax' 'pstuck' 'athresh' 'max_run' 'min_run' 'alpha' 'cons' 'slope' 'avg_peak_vel (um/s)' 'avg_peak_vel (mm/hr)' 'R2' 'avg_peak_size' 'winsize'};
-values = [density_3d n x y tmax tstep vmax pstuck athresh max_run min_run alpha cons slope avg_peak_vel avg_peak_vel*3.6 R2 avg_peak_size winsize];
+labels = {'density_3d' 'n' 'x' 'y' 'tmax' 'tstep' 'v_ave' 'pstuck' 'athresh' 'max_run' 'min_run' 'alpha' 'cons' 'slope' 'avg_peak_vel (um/s)' 'avg_peak_vel (mm/hr)' 'R2' 'avg_peak_size' 'winsize'};
+values = [density_3d n x y tmax tstep v_ave pstuck athresh max_run min_run alpha cons slope avg_peak_vel avg_peak_vel*3.6 R2 avg_peak_size winsize];
 dlmwrite(file, values, '-append') ; % write params
 
 if end_graph_stuck
@@ -661,3 +730,7 @@ end
 
 % Changes: chemotaxis response function
 % Cells adjust tumbling rate depending on gradient of food in environment
+
+%% Beta 0.3 Results
+
+% 
