@@ -10,7 +10,7 @@
 %% MAIN CONTROLS
 
 record_vid = 0; % Set to 1 if you want to record a video
-t_framegrab = 10; % nth number of sim frame to record
+t_framegrab = 20; % nth number of sim frame to record
 
 rt_graph_setting = 'MF'; %#
 
@@ -27,9 +27,9 @@ mkdir(strcat(folder,name));
 
 file = strcat(folder,name,'/',rt_graph_setting,'_',name,'.csv'); % creates writeable CSV
 fid = fopen(file, 'w') ;
- fprintf(fid, '%s,', labels{1,1:end-1}) ;
- fprintf(fid, '%s\n', labels{1,end}) ;
- fclose(fid) ;
+fprintf(fid, '%s,', labels{1,1:end-1}) ;
+fprintf(fid, '%s\n', labels{1,end}) ;
+fclose(fid) ;
 
 %% TO DO / DONE LIST
 
@@ -130,12 +130,14 @@ chemo2 = 1; % Classic chemotaxis
 % units in micrometers
 % speeds in micrometers / sec
 
+% Time (s)
+tic
 tmax = 260; % set simulation time duration (goal is 10 mins) %$ %100
 tstep = 0.1; % 0.1 is standard res because the rt round goes to 0.1 resolution %$
 
-% size of area in um
-x = 800; % 400 %$
-y = 4000; % 4000 %$
+% Area (um)
+x = 800; % 800 %$
+y = 2000; % 4000 %$
 
 if strcmp(rt_graph_setting,'RMS')
 D = zeros(iter,3); % creates diffusion constant measurement
@@ -149,7 +151,7 @@ for k = 1:iter
     
 %% Number of Cells and Initial Condition
 
-density_3d = 0.0001; % set the 3d density of cells (assuming slice size of 5 um) % 0.0025 or 4 times that
+density_3d = 0.0025; % set the 3d density of cells (assuming slice size of 5 um) % 0.0025 or 4 times that
 
 n = density_3d*x*y*5 % can go up to 10e5 cells without much problem % 10000 % 100
 
@@ -192,6 +194,7 @@ v = v(mask);
 V = zeros(n,2);
 V(:,1) = interp1(cdf_v,v,rand(n,1),'nearest'); % column 1 can be zero
 V(isnan(V)) = 0;
+V(V(:,1)==0) = 1;
 V(:,2) = V(:,1); % column 2 saves the original velocity
 
 % probability to get stuck
@@ -221,7 +224,7 @@ convolution = zeros(n,1); % initial convolution state for chemotactic response f
 end
 
 rt = round(exprnd(ave_run,n,1),1); % next run time, changes based on g
-% rt0 = rt;
+rt0 = rt;
 T = round(exprnd(ave_run,n,1),1); % initial tumble count-down vector
 
 %% Tumble Angle Distribution
@@ -253,10 +256,10 @@ cdf_theta = [0 cdf_theta];
 
 %% Glucose Field and Consumption Distribution
 
-Dg = 100; % Diffusion %200
+D_g = 0; % Diffusion %200 %100
 
 binsize = 20; %2
-slope = 0.05; %100 %$ % y/25 y/5 %30 %0.1 %0.02
+slope = 0.05; %100 %$ % y/25 y/5 %30 %0.1 %0.02 %0.05
 cbins.x = x/binsize; %20 %$ %x/20
 cbins.y = y/binsize; %400 %$ %y/20
 g = ones(cbins.y,cbins.x);
@@ -368,12 +371,14 @@ for t=0:tstep:tmax
             A(i,2) = wrapTo360(A(i,2) + rng_tum); % conditional change in direction
             
             % agar tunnel condition
+            if stuck > 0
             if V(i,1) ~= 0
             V(i,1) = Vpick(i,randi(length(Vpick(1,:)))); % pick random velocity in distribution
 
             else % must have a certain angle to escape
             if abs(A(i,2)-A(i,3)) >= athresh && abs(A(i,2)-A(i,3)) <= athresh+(180-athresh)*2 && V(i,2) ~= 0
                 V(i,1) = V(i,2);
+            end
             end
             end
     
@@ -455,7 +460,7 @@ end
    %!!!
     for i = 1:n % in case any cells fall out of the sim they have a G to use
         if isnan(Icx(i))==0 && isnan(Icy(i))==0
-            G(i,1) = g(Icx(i),Icy(i));
+            G(i,end) = g(Icx(i),Icy(i));
         end
     end
     
@@ -476,7 +481,7 @@ end
     laplgy = (sgd+sgu-2*g)/(dx)/(dx);
     laplg = laplgx + laplgy;
     
-    g = g + Dg*laplg*tstep;
+    g = g + D_g*laplg*tstep;
     g(end,:) = g(end-1,:);
     g(1,:) = g(2,:);
     
@@ -493,14 +498,14 @@ if chemo1
 end
 
 if chemo2
-    convolution = zeros(n,1); % reset convolution state !!!
-    for t1=tstep:tstep:cwin %!!!
+    convolution = zeros(n,1); % reset convolution state
+    for t1=tstep:tstep:cwin
         convolution = convolution + tstep*chemo_response(cwin-t1,ave_run,0.018).*G(:,round(t1/tstep));
     end
-    ave_run_chem = ave_run./(1-convolution); %!!! 
+    ave_run_chem = ave_run./(1-convolution);
     ave_run_chem(ave_run_chem>max_run) = max_run;
     ave_run_chem(ave_run_chem<min_run) = min_run;
-    rt = exprnd(ave_run_chem); %!!!
+    rt = exprnd(ave_run_chem);
     rt(rt>max_run) = max_run;
     rt(rt<min_run) = min_run;
 end
@@ -664,7 +669,7 @@ saveas(gcf,strcat(folder,name,'/',rt_graph_setting,'_',name,'_',num2str(avg_peak
 %! UNDER CONSTRUCTION
 
 labels = {'density_3d' 'n' 'x' 'y' 'tmax' 'tstep' 'v_ave' 'pstuck' 'athresh' 'max_run' 'min_run' 'alpha' 'cons' 'slope' 'avg_peak_vel (um/s)' 'avg_peak_vel (mm/hr)' 'R2' 'avg_peak_size' 'winsize'};
-values = [density_3d n x y tmax tstep v_ave pstuck athresh max_run min_run alpha cons slope avg_peak_vel avg_peak_vel*3.6 R2 avg_peak_size winsize];
+values = [density_3d n x y tmax tstep v_ave pstuck athresh max_run min_run cons slope avg_peak_vel avg_peak_vel*3.6 R2 avg_peak_size winsize];
 dlmwrite(file, values, '-append') ; % write params
 
 if end_graph_stuck
@@ -675,7 +680,8 @@ if strcmp(rt_graph_setting,'MF')
 avg_peak_vel
 avg_peak_size
 end
-        
+
+toc
 end
 
 if record_vid
@@ -733,4 +739,4 @@ end
 
 %% Beta 0.3 Results
 
-% 
+% minimum bin size resolution and tstep is 20 and 0.1 respectively
