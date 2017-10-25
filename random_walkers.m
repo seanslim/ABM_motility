@@ -136,8 +136,8 @@ tmax = 260; % set simulation time duration (goal is 10 mins) %$ %100
 tstep = 0.1; % 0.1 is standard res because the rt round goes to 0.1 resolution %$
 
 % Area (um)
-x = 800; % 800 %$
-y = 2000; % 4000 %$
+x = 400; % 800 %$
+y = 4000; % 4000 %$
 
 if strcmp(rt_graph_setting,'RMS')
 D = zeros(iter,3); % creates diffusion constant measurement
@@ -267,18 +267,18 @@ g_max = slope*y;
 
 % create a gradient of the food across y %!
 for i = 1:cbins.y
-g(i,:) = g(i,:)*slope*i*y/cbins.y - g_max/4; % -50 %!!!
+g(i,:) = g(i,:)*slope*i*y/cbins.y - g_max/4; % -50
 end
 g(g<0) = 0;
-g(g>g_max/4) = g_max/4;
+g(g>g_max/8) = g_max/8;
 
-if chemo1 %!!!
+if chemo1
 G = ones(n,1)*slope*y/2;
 end
 
 if chemo2
-cwin = ceil(10*ave_run); %!!!
-G = zeros(n,cwin/tstep); %!!!
+cwin = ceil(10*ave_run);
+G = zeros(n,cwin/tstep);
 end
 
 Cx_h4 = 0:x/cbins.x:x;
@@ -349,6 +349,7 @@ for t=0:tstep:tmax
         % countdown
         % velocity
         % angle
+        
     T= T-tstep;
     
     
@@ -454,6 +455,10 @@ end
     
 %% Calculate Next Chemical
 
+    if chemo2
+    G = circshift(G,[0 -1]); %!!!
+    end
+
     g = g-A1'*cons; % eating
     g(g<0) = 0;
     
@@ -475,7 +480,7 @@ end
     
     % Laplacian term for x
     
-    dx = 20;
+    dx = binsize;
     
     laplgx = (sgr+sgl-2*g)/(dx)/(dx);     
     laplgy = (sgd+sgu-2*g)/(dx)/(dx);
@@ -484,6 +489,8 @@ end
     g = g + D_g*laplg*tstep;
     g(end,:) = g(end-1,:);
     g(1,:) = g(2,:);
+    
+    
     
 %% Chemotaxis
     
@@ -527,7 +534,7 @@ end
 %% Update Real-Time Graphs for the Cells in Real Time
 
 A1_t = mean(A1)';
-winsize = 10; % prepare to filter the noise with a moving window average %$
+winsize = 2; % prepare to filter the noise with a moving window average %$
 b = (1/winsize)*ones(1,winsize);
 a = 1;
 A1_filt = filter(b,a,A1_t);
@@ -656,7 +663,7 @@ pbaspect([1 y/x 1]);
 end
 
 avg_peak_vel = m(1,1);
-avg_peak_size = mean(peaks(mint:end,2)); % average height
+avg_peak_size = mean(peaks(mint:end,2))/peaks(1,2); % average height ratio
 
 figure()
 plot(peaks(:,1))
@@ -668,8 +675,8 @@ saveas(gcf,strcat(folder,name,'/',rt_graph_setting,'_',name,'_',num2str(avg_peak
 
 %! UNDER CONSTRUCTION
 
-labels = {'density_3d' 'n' 'x' 'y' 'tmax' 'tstep' 'v_ave' 'pstuck' 'athresh' 'max_run' 'min_run' 'alpha' 'cons' 'slope' 'avg_peak_vel (um/s)' 'avg_peak_vel (mm/hr)' 'R2' 'avg_peak_size' 'winsize'};
-values = [density_3d n x y tmax tstep v_ave pstuck athresh max_run min_run cons slope avg_peak_vel avg_peak_vel*3.6 R2 avg_peak_size winsize];
+labels = {'density_3d' 'n' 'x' 'y' 'tmax' 'tstep' 'v_ave' 'athresh' 'max_run' 'min_run' 'alpha' 'cons' 'slope' 'avg_peak_vel (um/s)' 'avg_peak_vel (mm/hr)' 'R2' 'avg_peak_size' 'winsize'};
+values = [density_3d n x y tmax tstep v_ave athresh max_run min_run cons slope avg_peak_vel avg_peak_vel*3.6 R2 avg_peak_size winsize];
 dlmwrite(file, values, '-append') ; % write params
 
 if end_graph_stuck
@@ -740,3 +747,5 @@ end
 %% Beta 0.3 Results
 
 % minimum bin size resolution and tstep is 20 and 0.1 respectively
+%
+% peak height grows linearly over time, reaches double at 15 minutes
